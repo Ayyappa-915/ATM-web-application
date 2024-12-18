@@ -8,7 +8,7 @@ const port = 8000;
 
 app.use(express.json());
 
-mongoose.connect('mongodb://localhost:27017/databse')
+mongoose.connect('mongodb+srv://coderhoney915:coderhoney915@cluster0.vvldp.mongodb.net/ATM_DATABASE')
     .then(() => { console.log("connected to mongodb") })
     .catch(error => { console.log("Error", error) });
 
@@ -25,7 +25,7 @@ const transaction_schema = new mongoose.Schema({
     account_number: String,
     type: String,
     amount: Number,
-    Date: { type: Date, default: Date.now }
+    date: { type: Date, default: Date.now }
 });
 const transaction_model = mongoose.model('Transactions', transaction_schema);
 
@@ -225,38 +225,52 @@ app.post('/change_pin' , (req,res)=>{
     });
 })
 
-app.post('/transaction',(request,response)=>{
-    const {account_number,pin_number} = request.body;
-    account_model.findOne({account_number})
-    .then((existing_account)=>{
-        if(!existing_account){
-            response.json({msg:"Account was not Found..." , done:true});
+app.post('/transaction', (request, response) => {
+    const { account_number, pin_number } = request.body;
+    account_model.findOne({ account_number })
+    .then((existing_account) => {
+        if (!existing_account) {
+            response.json({ msg: "Account was not found...", done: true });
             return null;
         }
-        if(!existing_account.pin_number){
-            response.json({msg:"Pin was not generated for this account",done:true});
-            return null;
-
-        }
-        if(existing_account.pin_number != pin_number){
-            response.json({msg:"Invalid Pin Number.please Enter valid PIN Number" , done:false});
+        if (!existing_account.pin_number) {
+            response.json({ msg: "Pin was not generated for this account", done: true });
             return null;
         }
+        if (existing_account.pin_number !== pin_number) {
+            response.json({ msg: "Invalid Pin Number. Please enter a valid PIN number", done: false });
+            return null;
+        }
+        transaction_model.find({ account_number })
+        .then((existing_transaction) => {
+            if (!existing_transaction || existing_transaction.length === 0) {
+                response.json({ msg: "Transaction was not started yet..." });
+                return null;
+            }
+            const formattedTransactions = existing_transaction.map((transaction) => {
+                return {
+                    account_number: transaction.account_number,
+                    amount: transaction.amount, 
+                    type: transaction.type,
+                    date:transaction.date,
+                };
+            });
+            response.json({
+                msg: "Transaction History:",
+                transactions: formattedTransactions,
+                done: true
+            });
+        })
+        .catch((error) => {
+            console.error(error);
+            response.json({ msg: "Failed to fetch transaction history due to error", error });
+        });
     })
-    transaction_model.find({account_number})
-    .then((existing_transaction) =>{
-        if(!existing_transaction) {
-            response.json({msg:"Transaction was Not Started yet..."});
-            return null;
-        }
-        response.json({msg:`The Transaction History for the Account is: \n ${existing_transaction}`, done:true});
-    })
-    .catch((error)=>
-    {
+    .catch((error) => {
         console.error(error);
-        response.json({msg:"Transaction History was failed due to error",error})
+        response.json({ msg: "Error finding account", error });
     });
-})
+});
 
 app.post('/money_transfer', (req, res) => {
     const {rec_acc_no,sen_acc_no,amount,pin_number} = req.body;
