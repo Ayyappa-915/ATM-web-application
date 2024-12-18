@@ -2,7 +2,6 @@ const express = require('express');
 const path = require('path');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
-const { verify } = require('crypto');
 
 const app = express();
 const port = 8000;
@@ -15,15 +14,15 @@ mongoose.connect('mongodb://localhost:27017/databse')
 
 const account_schema = new mongoose.Schema({
     account_name: String,
-    account_number: Number,
-    phone_number: Number,
+    account_number: String,
+    phone_number: String,
     amount: Number,
     pin_number: String // Added pin_number to the schema
 });
 const account_model = mongoose.model('Accounts', account_schema);
 
 const transaction_schema = new mongoose.Schema({
-    account_number: Number,
+    account_number: String,
     type: String,
     amount: Number,
     Date: { type: Date, default: Date.now }
@@ -259,80 +258,55 @@ app.post('/transaction',(request,response)=>{
     });
 })
 
-app.post('/money_transfer', (req,res)=>{
-    const {rec_acc_no , sen_acc_no , amount , pin_number} = req.body;
-    let receiver;
-    let sender;
-    account_model.findOne({sen_acc_no})
-    .then((verifying_sender)=>{
-        if(!verifying_sender){
-            res.json({msg:'Sender Account was not Found...' , done:true});
-            return ;
+app.post('/money_transfer', (req, res) => {
+    const {rec_acc_no,sen_acc_no,amount,pin_number} = req.body;
+    if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+        return res.json({ msg: 'Invalid amount.', done: false });
+    }
+    account_model.findOne({ account_number: sen_acc_no })
+    .then(sender => {
+        if (!sender) {
+            return res.json({ msg: 'Sender Account not found.', done: true });
         }
-        if(!verifying_sender.pin_number){
-            res.json({msg:'Pin was not Generated for this Account...Please Generate Pin Number',done:true});
-            return ;
-        }   
-        if(verifying_sender.pin_number !== pin_number){
-            res.json({msg:'Invalid Pin Number.Please Enter valid Pin Number',done:false});
-            return ;
+        if (!sender.pin_number || sender.pin_number !== pin_number) {
+            return res.json({ msg: 'Invalid PIN for sender.', done: false });
         }
-        if(verifying_sender.amount < amount){
-            response.json({msg:"Insufficient Funds are Available..." , done:true});
-            return ;
+        if (sender.amount < amount) {
+            return res.json({ msg: 'Insufficient funds.', done: true });
         }
-        sender=verifying_sender;
-        return account_model.findOne({rec_acc_no})
-    })
-    .then((verifying_receiver)=>{
-        if(!verifying_receiver){
-            res.json({msg:"Receiver Account was not Found",done:true});
-            return ;
-        }
-        receiver=verifying_receiver;
-        sender.amount-=parseFloat(amount);
-        receiver.amount+=parseFloat(amount);
+        return account_model.findOne({ account_number: rec_acc_no })
+            .then(receiver => {
+                if (!receiver) {
+                    return res.json({ msg: 'Receiver Account not found.', done: true });
+                }
+                sender.amount -= parseFloat(amount);
+                receiver.amount += parseFloat(amount);
+                return Promise.all([sender.save(), receiver.save()])
+                    .then(() => {
+                        const senderTransaction = new transaction_model({
+                        account_number: sen_acc_no,
+                        type: 'Money-Transfer : mode-WITHDRAW',
+                        amount: parseFloat(amount),
+                        });
+                        const receiverTransaction = new transaction_model({
+                        account_number: rec_acc_no,
+                        type: 'Money-Transfer : mode-DEPOSIT',
+                        amount: parseFloat(amount),
+                    });
+                return Promise.all([senderTransaction.save(), receiverTransaction.save()])
+            .then(() => {
+                res.json({ msg: `Money ${amount} successfully transferred.`, done: true });
+            });
+        });
+                });
+        })
+        .catch(error => {
+            console.error(error);
+            res.json({ msg: 'Money transfer failed due to an error.', error });
+        });
+});
 
-        return sender.save();
-    })
-    .then((updated_sender)=>{
-        if(!updated_sender) {
-            return ;
-        }
-        const newTransaction = new transaction_model({
-            account_number : sender.account_number,
-            type: 'Money-Transfer : mode-WITHDRAW',
-            amount: parseFloat(amount),
-        });  
-        return newTransaction.save();
-    })
-    .then((sender_transaction)=>{
-        if(sender_transaction){
-            return receiver.save();
-        }
-    })
-    .then((updated_receiver)=>{
-        if(!updated_receiver){
-            return ;
-        }
-        const newTransaction = new transaction_model({
-            account_number : receiver.account_number,
-            type: 'Money-Transfer : mode-DEPOSIT',
-            amount: parseFloat(amount),
-        });  
-        return newTransaction.save();
-    })
-    .then((receiver_transaction)=>{
-        if(!receiver_transaction){
-            res.json({msg:`Money ${amount} was successfully Transferred`,done:true});
-            return ;
-        }
-    })
-    .catch((error)=>{
-        console.log(error);
-        res.json({msg:'Money Transfer was Failed due to Error'});
-    })
-})
+
 
 
 app.use(express.static(__dirname));
@@ -372,7 +346,7 @@ app.get('/withdraw', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));  // Serving the index.html directly from root
+    res.sendFile(path.join(__dirname, 'index.html'));  
 });
 
 app.listen(port, () => {
