@@ -30,8 +30,8 @@ function transaction(event) {
     .then((res) => res.json())
     .then((result) => {
         if (result.done) { 
-            const transactions = result.tra.map((doc) => {
-                ` ----->  Account Number: ${doc.account_number}, Type: ${doc.type}, Amount: ${doc.amount}, Date: ${doc.date}`}).join('\n')
+            const transactions = result.tra.map((doc) => 
+                ` ----->  Account Number: ${doc.account_number}, Type: ${doc.type}, Amount: ${doc.amount}, Date: ${doc.date}`).join('\n')
             alert(`Transaction History:\n \n ${transactions}`);
             window.location.href = '/index.html';
         } 
